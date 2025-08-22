@@ -31,6 +31,10 @@ const Product = mongoose.model("Product", productSchema);
 // =========================
 // Routes
 // =========================
+// Root route
+app.get("/", (req, res) => {
+  res.send("✅ API is running successfully!");
+});
 
 // GET all products
 app.get("/api/products", async (req, res) => {
