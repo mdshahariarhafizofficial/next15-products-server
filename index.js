@@ -2,19 +2,29 @@ import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
+import serverless from "serverless-http";
+
 dotenv.config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGODB_URI;
 
-// MongoDB connect
-mongoose.connect(MONGO_URI)
-  .then(() => console.log("MongoDB connected"))
-  .catch(err => console.error(err));
+// MongoDB connect (singleton pattern যাতে বারবার connect না হয়)
+let isConnected = false;
+async function connectDB() {
+  if (isConnected) return;
+  try {
+    await mongoose.connect(MONGO_URI);
+    isConnected = true;
+    console.log("✅ MongoDB connected");
+  } catch (err) {
+    console.error("❌ MongoDB connection failed:", err.message);
+  }
+}
+connectDB();
 
 // Product schema
 const productSchema = new mongoose.Schema({
@@ -25,13 +35,9 @@ const productSchema = new mongoose.Schema({
   image: String,
   features: [String],
 });
+const Product = mongoose.models.Product || mongoose.model("Product", productSchema);
 
-const Product = mongoose.model("Product", productSchema);
-
-// =========================
 // Routes
-// =========================
-// Root route
 app.get("/", (req, res) => {
   res.send("✅ API is running successfully!");
 });
@@ -39,6 +45,7 @@ app.get("/", (req, res) => {
 // GET all products
 app.get("/api/products", async (req, res) => {
   try {
+    await connectDB();
     const products = await Product.find();
     res.json(products);
   } catch (err) {
@@ -46,11 +53,11 @@ app.get("/api/products", async (req, res) => {
   }
 });
 
-// GET single product by ID
+// GET single product
 app.get("/api/products/:id", async (req, res) => {
   try {
-    const { id } = req.params;
-    const product = await Product.findById(id);
+    await connectDB();
+    const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ error: "Product not found" });
     res.json(product);
   } catch (err) {
@@ -61,6 +68,7 @@ app.get("/api/products/:id", async (req, res) => {
 // POST new product
 app.post("/api/products", async (req, res) => {
   try {
+    await connectDB();
     const product = new Product(req.body);
     await product.save();
     res.status(201).json(product);
@@ -69,32 +77,29 @@ app.post("/api/products", async (req, res) => {
   }
 });
 
-// PUT update product by ID
+// PUT update product
 app.put("/api/products/:id", async (req, res) => {
   try {
-    const { id } = req.params;
-    const updatedProduct = await Product.findByIdAndUpdate(id, req.body, { new: true });
-    if (!updatedProduct) return res.status(404).json({ error: "Product not found" });
-    res.json(updatedProduct);
+    await connectDB();
+    const updated = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!updated) return res.status(404).json({ error: "Product not found" });
+    res.json(updated);
   } catch (err) {
     res.status(500).json({ error: "Failed to update product" });
   }
 });
 
-// DELETE product by ID
+// DELETE product
 app.delete("/api/products/:id", async (req, res) => {
   try {
-    const { id } = req.params;
-    const deletedProduct = await Product.findByIdAndDelete(id);
-    if (!deletedProduct) return res.status(404).json({ error: "Product not found" });
+    await connectDB();
+    const deleted = await Product.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ error: "Product not found" });
     res.json({ message: "Product deleted successfully" });
   } catch (err) {
     res.status(500).json({ error: "Failed to delete product" });
   }
 });
 
-// =========================
-// Start server
-// =========================
-// app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-export default app;
+// Export serverless handler
+export default serverless(app);
